@@ -72,6 +72,18 @@ datafile_fixtures = retrieve_data(link=
 
 
 
+# More complicated - for each player - retrieve a dictionary of their data
+datafile_players_deep = {}
+for i, pl in enumerate(datafile_main['elements']):
+    if i%10==0:
+        print("Player number: " + str(i) + " of " + str(len(datafile_main['elements'])))
+
+    player_id = pl['id']
+    datafile_players_deep[player_id] = retrieve_data(link=
+                                 "https://fantasy.premierleague.com/drf/element-summary/"
+                                 + str(player_id))
+
+
 
 # Define variables used to save raw data
 current_event = datafile_main['current-event']
@@ -82,7 +94,8 @@ save_dir = os.path.join(out_dir, season_id, 'GW' + str(current_event))
 
 out_data = {'data_main': datafile_main,
             'data_regions': datafile_regions,
-            'data_fixtures': datafile_fixtures}
+            'data_fixtures': datafile_fixtures,
+            'data_players_deep': datafile_players_deep}
 
 # Check folder for this gameweek exists. If it does not - create it
 if not os.path.exists(save_dir):
@@ -97,3 +110,4 @@ for fl, fldata in out_data.items():
 
 #with open(outfile, 'rb') as test:
 #    x = pickle.load(test)
+

@@ -13,10 +13,10 @@ from copy import deepcopy
 
 season_id = 's201819'
 in_dir = r'D:\Documents\PythonDoc\FantasyFootball\new_data'
-gameweek = 33
+gameweek = 34 #33
 
 # Make automatic
-datetime_id = '1554918903'
+datetime_id = '1555250244' #'1554918903'
 
 
 infile_main_ = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
@@ -37,13 +37,19 @@ infile_fixtures = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
 with open(infile_fixtures, 'rb') as read:
     data_fixtures = pickle.load(read)
 
+infile_players_deep = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
+                               'data_players_deep_GW' + str(gameweek) + '_' + datetime_id +\
+                               '.pkl')
+with open(infile_players_deep, 'rb') as read:
+    data_players_deep = pickle.load(read)
+
 # Replace values which are lists or NoneTypes with numpy nans
 def replace_nonetype_in_dict(thedict):
     enddict = {k: (np.nan if v==None or isinstance(v, (list,)) else v) \
                for k, v in thedict.items()}
     return enddict
 
-del infile_fixtures, infile_main_, infile_regions
+del infile_fixtures, infile_main_, infile_regions, infile_players_deep
 #def extract_main(data):
 
 
@@ -240,7 +246,7 @@ def get_fixtures(data):
         fixtures = fixtures.append(df_row)
 
     fixtures.rename(columns={'code': 'fixture_code',
-                             'id': 'curr_season_fixture_id',
+                             'id': 'fixture_id',
                              'event': 'gameweek'},
         inplace=True)
 
@@ -297,12 +303,68 @@ def get_fixture_stats(data):
     return player_game_stats_wide
 
 
+
+
+def get_players_deep(data):
+
+    cols = ['element',
+            'round',
+            'fixture',
+            'selected',
+            'value',
+            'total_points',
+            'minutes',
+            'goals_scored',
+            'bonus',
+            'opponent_team',
+            ]
+
+    player_history = pd.DataFrame(columns=cols)
+    player_future = pd.DataFrame()
+    for player_id, pdict in data.items():
+        player_history = player_history.append(pd.DataFrame(pdict['history']), sort=False)
+        temp_future = pd.DataFrame(pdict['fixtures'])
+        temp_future['player_id'] = player_id
+        player_future = player_future.append(temp_future)
+
+    player_history.rename(columns={'element': 'player_id',
+                                   'round': 'gameweek',
+                                        'fixture': 'fixture_id',
+                                        'id': 'playergw_id'
+                                        }, inplace=True)
+    player_future.rename(columns={'id': 'fixture_id',
+                                        'code': 'fixture_code'
+                                        }, inplace=True)
+
+    return player_history, player_future
+
+
 fixtures = get_fixtures(data_fixtures)
 events = get_events(data_main['events'])
 next_events = get_next_events(data_main['next_event_fixtures'])
 teams = get_teams(data_main['teams'])
-players = get_players(data_main['elements'])
+player_summary = get_players(data_main['elements'])
 player_game_stats = get_fixture_stats(data_fixtures)
+player_history, player_future = get_players_deep(data_players_deep)
+
+
+# merge on: position_id, team_id (more effort due to transfers), first_name, second_name
+# work out: points_per_game and other X per game/ x per last n games,
+# difficult merges: squad_number, chance_of_playing_next_round, chance_of_playing_this_round,
+# status, news, news_added,  cost_change_event, cost_change_start, form, value_season, value_form
+
+total_players = (player_history.groupby('round')['selected'].sum()/25).apply(lambda x: '%.3f' % x)
+
+x = [col for col in player_summary.columns if col not in player_history.columns]
+
+player_history.sort_values(['player_id','fixture_id'], inplace=True)
+target = player_history.groupby('player_id')['total_points'].shift(-1)
+player_history.insert(5, 'next_points', target)
+
+
+
+
+
 
 # Add to teams (before adding to players)
 
@@ -310,12 +372,8 @@ player_game_stats = get_fixture_stats(data_fixtures)
 # Add to fixtures
 
 
-# Add to players
-players2 = players.copy()
-players2['element_type'] = players2['element_type'].astype(int)
-players2 = players2.merge(positions.rename(columns=
-                                           {'id':'element_type'})[
-    ['element_type', 'singular_name_short']],
-                          how='left',
-                          on='element_type')
+# Add to fixtures stats - team, gameweek
+
+
+# Add to players - team details
 
