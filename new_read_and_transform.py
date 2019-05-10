@@ -14,30 +14,34 @@ from copy import deepcopy
 
 season_id = 's201819'
 in_dir = r'D:\Documents\PythonDoc\FantasyFootball\new_data'
+
+# TODO Make automatic
+datetime_id = '1555250244' #'1554918903'
 gameweek = 34 #33
 
-# Make automatic
-datetime_id = '1555250244' #'1554918903'
-
-
+# Read in raw saved data files
+# Main current gameweek dataset
 infile_main_ = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
                             'data_main_GW' + str(gameweek) + '_' + datetime_id +\
                             '.pkl')
 with open(infile_main_, 'rb') as read:
     data_main = pickle.load(read)
 
+# Player regions
 infile_regions = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
                               'data_regions_GW' + str(gameweek) + '_' + datetime_id +\
                               '.pkl')
 with open(infile_regions, 'rb') as read:
     data_regions = pickle.load(read)
 
+# All fixtures
 infile_fixtures = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
                                'data_fixtures_GW' + str(gameweek) + '_' + datetime_id +\
                                '.pkl')
 with open(infile_fixtures, 'rb') as read:
     data_fixtures = pickle.load(read)
 
+# Detailed player data
 infile_players_deep = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
                                'data_players_deep_GW' + str(gameweek) + '_' + datetime_id +\
                                '.pkl')
@@ -51,20 +55,11 @@ def replace_nonetype_in_dict(thedict):
     return enddict
 
 del infile_fixtures, infile_main_, infile_regions, infile_players_deep
-#def extract_main(data):
-
-
-current_gw = data_main['current-event']
-positions = pd.DataFrame(data_main['element_types'])
-#game-settings
-final_gw = data_main['last-entry-event']
-next_gw = data_main['next-event']
-
-#stats
-#stats_options
-
 
 def get_players(data):
+    # get current gameweek player data
+
+    # order columns
     col_order = ['id',
                  'code',
                  'element_type',
@@ -93,9 +88,21 @@ def get_players(data):
                  'form',
                  ]
 
+    # Add unordered columns to end of ordered columns
     cols_all = col_order + [col for col in data[0].keys() \
                             if col not in col_order]
 
+    # Convert dictionary with key as ID to DataFrame - better method than below
+    # but causes a problem later on
+#    players = pd.DataFrame(data)
+#    players = players[cols_all]
+#    players.rename(columns={'id': 'player_id',
+#                            'code': 'player_code',
+#                            'element_type': 'position_id',
+#                            'team': 'team_id'},
+#    inplace=True)
+
+    # Convert dictionary with key as ID to DataFrame
     players = pd.DataFrame(columns=cols_all)
     for pl in data:
         player_id = pl['id']
@@ -112,6 +119,8 @@ def get_players(data):
 
 
 def get_events(data):
+    # Get all gameweek data
+
     cols_order = ['id',
                   'name',
                   'finished',
@@ -121,13 +130,19 @@ def get_events(data):
                   'highest_scoring_entry',
                   'is_current',
                   'is_next',
-                  'is_previous'
+                  'is_previous',
                   'deadline_time',
                   'deadline_time_epoch',
                   'deadline_time_formatted',
                   'deadline_time_game_offset',
                   ]
 
+    # Convert dict to DataFrame - better method than below
+    # but causes a problem later on
+#    events = pd.DataFrame(data)
+#    events = events[cols_order]
+
+    # Convert dict to DataFrame
     events = pd.DataFrame(columns=cols_order)
     for pl in data:
         event_id = pl['id']
@@ -140,6 +155,7 @@ def get_events(data):
 
 
 def get_next_events(data):
+    # Get current gameweek data (including each fixture)
     cols_order = ['event',
                   'code',
                   'id',
@@ -160,8 +176,7 @@ def get_next_events(data):
                   'stats'
                   ]
 
-
-
+    # Convert to dict this way as some values have scores and others don't
     next_events = pd.DataFrame(columns=cols_order)
     for pl in data:
         next_event_id = pl['id']
@@ -177,6 +192,8 @@ def get_next_events(data):
 
 
 def get_teams(data):
+    # Get teams
+
     cols_order = ['id',
                      'short_name',
                      'name',
@@ -200,24 +217,38 @@ def get_teams(data):
                      'link_url',
                      ]
 
+    # This complicated loop is needed to convert the dict to a DataFrame due to
+    # the different types of values in it.
     teams = pd.DataFrame(columns=cols_order)
     for pl in data:
+
+        # For each team (initial row)
         team_id = pl['id']
 
+        # Add new row to initially empty DF
         teams.loc[team_id, 'id'] = team_id
 
+        # For each item in the team's dictionary
         for k, v in pl.items():
+
+            # Get data for coming fixture from list containing dict. If two
+            # elements (double gameweek), take only the first (scope of this
+            # project )
             if k=='current_event_fixture' and v:
                 v_curr = {'curr_game_' + x: y for (x, y) in pl[k][0].items()}
                 for k2, v2 in v_curr.items():
                     teams.loc[team_id, k2] = v2
-
+            # If no current fixture (team has no game this gameweek), ignore
             elif k=='current_event_fixture':
                 pass
+            # Get data for next fixture from list containing dict. If two
+            # elements (double gameweek), take only the first (scope of this
+            # project )
             elif k=='next_event_fixture' and v:
                 v_next = {'next_game_' + x: y for (x, y) in pl[k][0].items()}
                 for k2, v2 in v_next.items():
                     teams.loc[team_id, k2] = v2
+            # If no next fixture (team has no game this gameweek), ignore
             elif k=='next_event_fixture':
                 pass
             elif v==None:
@@ -234,8 +265,10 @@ def get_teams(data):
 
 
 def get_fixtures(data):
+    # Get all fixtures data
     fixtures = pd.DataFrame()
 
+    # Make dict into DataFrame - stats can cause problems and is done separately
     for vdict in data:
 
         vdict_nostats = deepcopy(vdict)
@@ -255,6 +288,7 @@ def get_fixtures(data):
 
 
 def get_fixture_stats(data):
+    # Get all player-fixture stats (not really used)
     cols = ['code',
             'team_code',
             'stat',
@@ -263,6 +297,7 @@ def get_fixture_stats(data):
 
     player_game_stats = pd.DataFrame(columns=cols)
 
+    # For each gameweek
     for vdict in data:
 
         # For each game
@@ -271,28 +306,33 @@ def get_fixture_stats(data):
         home_code = vdict['team_h']
         away_code = vdict['team_a']
 
+        # For every stat in the gameweek dictionary
         for current_stat in stats_game:
             # For each statistic for the game
 
+            # Name of stat
             stat_string = list(current_stat)[0]
             key_current_stat = current_stat[stat_string]
 
+            # Home team player stats
             home_stat_dict = key_current_stat['h']
             home_stat_df = pd.DataFrame(home_stat_dict)
             home_stat_df['stat'] = stat_string
             home_stat_df['code'] = game_id
             home_stat_df['team_code'] = home_code
 
+             # Away team player stats
             away_stat_dict = key_current_stat['a']
             away_stat_df = pd.DataFrame(away_stat_dict)
             away_stat_df['stat'] = stat_string
             away_stat_df['code'] = game_id
             away_stat_df['team_code'] = away_code
 
+            # Append each player for each team (both home and away)
             player_game_stats = player_game_stats.append(home_stat_df, sort=True)
             player_game_stats = player_game_stats.append(away_stat_df, sort=True)
 
-
+    # Reshape data from long-to-wide
     player_game_stats_wide = player_game_stats.pivot_table(index=['code','element'],
                                                                  columns='stat',
                                                                 values='value',
@@ -307,6 +347,7 @@ def get_fixture_stats(data):
 
 
 def get_players_deep(data):
+    # Get detailed player details
 
     cols = ['element',
             'round',
@@ -320,9 +361,12 @@ def get_players_deep(data):
             'opponent_team',
             ]
 
+    # Need to use same data to get two outputs, a past and future dataset
     player_history = pd.DataFrame(columns=cols)
     player_future = pd.DataFrame()
     for player_id, pdict in data.items():
+        # pdict is a dictionary containing 'future' and 'history' values for
+        # each player
         player_history = player_history.append(pd.DataFrame(pdict['history']), sort=False)
         temp_future = pd.DataFrame(pdict['fixtures'])
         temp_future['player_id'] = player_id
@@ -339,6 +383,12 @@ def get_players_deep(data):
 
     return player_history, player_future
 
+
+
+current_gw = data_main['current-event']
+positions = pd.DataFrame(data_main['element_types'])
+final_gw = data_main['last-entry-event']
+next_gw = data_main['next-event']
 
 fixtures = get_fixtures(data_fixtures)
 events = get_events(data_main['events'])
@@ -514,22 +564,6 @@ team_stats_add.rename(columns={'points':'team_prev_result_points',
 
 
 
-#temp_big_fixtures_home = fixtures[fixt_cols].rename(
-#        columns={'team_h':'team_id',
-#                 'team_a':'opponent_team',
-#                 'team_h_difficulty':'team_difficulty',
-#                 'team_a_difficulty':'opponent_difficulty'})
-#temp_big_fixtures_home['is_home'] = True
-#temp_big_fixtures_away = fixtures[fixt_cols].rename(
-#        columns={'team_a':'team_id',
-#                 'team_h':'opponent_team',
-#                 'team_a_difficulty':'team_difficulty',
-#                 'team_h_difficulty':'opponent_difficulty'})
-#temp_big_fixtures_away['is_home'] = False
-#
-#temp_big_fixtures = pd.concat([temp_big_fixtures_home, temp_big_fixtures_away], sort=False)
-#temp_big_fixtures.sort_values(['team_id','gameweek','kickoff_time'], inplace=True)
-#temp_big_fixtures_single = temp_big_fixtures.groupby(['team_id','gameweek']).head(1)
 
 final_player_row.gameweek = final_player_row.gameweek.astype(int)
 final_player_row = final_player_row.merge(
@@ -898,4 +932,18 @@ corr = df_test.corr()
 corr_target = corr.loc[:, 'target_total_points']
 
 x2 = df_test[df_test['player_id']=='302'].copy()
+
+# =============================================================================
+# TODO
+# =============================================================================
+# Clean up
+# Some EDA
+# Categorical response
+# Choose features
+# Build models
+
+
+
+
+
 
