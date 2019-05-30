@@ -1,63 +1,53 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Apr 10 18:58:20 2019
+Created on Sun May 12 08:42:50 2019
 
 @author: harry
 """
-
-#http://www.football-data.co.uk/englandm.php
 
 import os
 import pickle
 import pandas as pd
 import numpy as np
-import sqlite3
 from copy import deepcopy
 
-season_id = 's201819'
-in_dir = r'D:\Documents\PythonDoc\FantasyFootball\new_data'
-out_dir = r'D:\Documents\PythonDoc\FantasyFootball\new_data\s201819\cleaned'
+def raw_data_load(in_dir,
+                  in_prefix,
+                  gameweek,
+                  season_id,
+                  datetime_id='latest'):
 
-# TODO Make automatic
-datetime_id = '1555250244' #'1554918903'
-gameweek = 34 #33
+    # If requested, use the latest created file for the gameweek. Otherwise use
+    # the supplied details to construct the correct file
+    if datetime_id=='latest':
+        full_in_dir = os.path.join(in_dir,
+                                   season_id,
+                                   'GW' + str(gameweek).zfill(2))
+        files = [os.path.join(full_in_dir, file) for file in\
+                 os.listdir(full_in_dir) if file.find(
+                         in_prefix + str(gameweek).zfill(2))!=-1]
+        use_file = max(files, key=os.path.getctime)
+    else:
+        if in_prefix==None:
+            raise ValueError('in_prefix must be specified')
+        elif season_id==None:
+            raise ValueError('season_id must be specified')
+        elif datetime_id==None:
+            raise ValueError('datetime_id must be specified')
+        else:
+            use_file = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
+                                    in_prefix + str(gameweek) + '_' + \
+                                    datetime_id + '.pkl')
 
-# Read in raw saved data files
-# Main current gameweek dataset
-infile_main_ = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
-                            'data_main_GW' + str(gameweek) + '_' + datetime_id +\
-                            '.pkl')
-with open(infile_main_, 'rb') as read:
-    data_main = pickle.load(read)
-
-# Player regions
-infile_regions = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
-                              'data_regions_GW' + str(gameweek) + '_' + datetime_id +\
-                              '.pkl')
-with open(infile_regions, 'rb') as read:
-    data_regions = pickle.load(read)
-
-# All fixtures
-infile_fixtures = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
-                               'data_fixtures_GW' + str(gameweek) + '_' + datetime_id +\
-                               '.pkl')
-with open(infile_fixtures, 'rb') as read:
-    data_fixtures = pickle.load(read)
-
-# Detailed player data
-infile_players_deep = os.path.join(in_dir, season_id, 'GW' + str(gameweek),\
-                               'data_players_deep_GW' + str(gameweek) + '_' + datetime_id +\
-                               '.pkl')
-with open(infile_players_deep, 'rb') as read:
-    data_players_deep = pickle.load(read)
+    with open(use_file, 'rb') as read:
+        data_raw = pickle.load(read)
+    return data_raw
 
 # Replace values which are lists or NoneTypes with numpy nans
 def replace_nonetype_in_dict(thedict):
     enddict = {k: (np.nan if v==None or isinstance(v, (list,)) else v) \
                for k, v in thedict.items()}
     return enddict
-
-del infile_fixtures, infile_main_, infile_regions, infile_players_deep
 
 def get_players(data):
     # get current gameweek player data
@@ -388,6 +378,7 @@ def get_players_deep(data):
 
 # TODO. Originally had as a script. Go back and split up into smaller functions
 def clean_data(player_history,
+               teams,
                fixtures,
                player_summary,
                positions,
@@ -410,8 +401,6 @@ def clean_data(player_history,
         # Add team based upon the fixture and home/away
         player_full_set.insert(1, 'team_id', temp_team_id)
         return player_full_set
-
-    player_full_set = add_fixture_team(player_full_set, fixtures)
 
 
     def team_detailed_data(fixtures, player_full_set, prev_matches_consider):
@@ -509,8 +498,6 @@ def clean_data(player_history,
                                                          'unique_scorers':'team_prev_unique_scorers'}, inplace=True)
         return team_fixtures_results_single, team_fixtures_results, team_stats_add
 
-    team_fixtures_results_single, team_fixtures_results, team_stats_add = \
-    team_detailed_data(fixtures, player_full_set, prev_matches_consider)
 
     def add_predict_player_row(total_players, player_full_set):
         # Add extra row per player. This will be added to the bottom of each to
@@ -550,8 +537,6 @@ def clean_data(player_history,
         player_full_set.sort_values(['player_id', 'gameweek', 'fixture_id'], inplace=True)
 
         return player_full_set
-
-    player_full_set = add_predict_player_row(total_players, player_full_set)
 
 
     def add_lagged_columns(player_full_set):
@@ -625,7 +610,6 @@ def clean_data(player_history,
         player_full_set.rename(columns=target_cols_rename, inplace=True)
         return player_full_set
 
-    player_full_set = add_lagged_columns(player_full_set)
 
     def add_team_details(player_full_set, team_fixtures_results):
         # Add team details to the player dataset
@@ -652,8 +636,6 @@ def clean_data(player_history,
                                       'prev_team_h_score'], inplace=True)
         return player_full_set
 
-    player_full_set = add_team_details(player_full_set, team_fixtures_results)
-
 
     def add_player_reference_data(player_full_set, player_summary, positions):
         # Add player summary columns, including reference info like names as well
@@ -675,8 +657,6 @@ def clean_data(player_history,
                 left_on='position_id',
                 right_on='id').drop(columns=['id','position_id'])
         return player_full_set
-
-    player_full_set = add_player_reference_data(player_full_set, player_summary, positions)
 
 
     def add_team_reference_data(player_full_set, teams):
@@ -730,7 +710,6 @@ def clean_data(player_history,
                 inplace=True)
         return player_full_set
 
-    player_full_set = add_team_reference_data(player_full_set, teams)
 
 
     def add_time_features(player_full_set):
@@ -772,7 +751,6 @@ def clean_data(player_history,
         player_full_set['prev_kickoff_weekday_sin'] = np.sin(w_const*player_full_set['prev_kickoff_weekday'].astype(float))
         return player_full_set
 
-    player_full_set = add_time_features(player_full_set)
 
     def add_rolling_stats(player_full_set, team_stats_add, prev_matches_consider):
         # Add previous and rolling team stats
@@ -792,6 +770,16 @@ def clean_data(player_history,
                 lambda x: x.rolling(center=False, window=prev_matches_consider).mean())
         return player_full_set
 
+
+    player_full_set = add_fixture_team(player_full_set, fixtures)
+    team_fixtures_results_single, team_fixtures_results, team_stats_add = \
+    team_detailed_data(fixtures, player_full_set, prev_matches_consider)
+    player_full_set = add_predict_player_row(total_players, player_full_set)
+    player_full_set = add_lagged_columns(player_full_set)
+    player_full_set = add_team_details(player_full_set, team_fixtures_results)
+    player_full_set = add_player_reference_data(player_full_set, player_summary, positions)
+    player_full_set = add_team_reference_data(player_full_set, teams)
+    player_full_set = add_time_features(player_full_set)
     player_full_set = add_rolling_stats(player_full_set, team_stats_add, prev_matches_consider)
 
 
@@ -922,118 +910,3 @@ def clean_data(player_history,
     player_full_set = player_full_set[new_col_order]
 
     return player_full_set
-
-current_gw = data_main['current-event']
-positions = pd.DataFrame(data_main['element_types'])
-final_gw = data_main['last-entry-event']
-next_gw = data_main['next-event']
-
-fixtures = get_fixtures(data_fixtures)
-events = get_events(data_main['events'])
-next_events = get_next_events(data_main['next_event_fixtures'])
-teams = get_teams(data_main['teams'])
-player_summary = get_players(data_main['elements'])
-player_game_stats = get_fixture_stats(data_fixtures)
-player_history, player_future = get_players_deep(data_players_deep)
-total_players = data_main['total-players']
-
-player_data = clean_data(player_history,
-               fixtures,
-               player_summary,
-               positions,
-               total_players,
-               prev_matches_consider=3)
-
-player_data.to_csv(os.path.join(out_dir, f'cleaned_GW{str(gameweek).zfill(2)}_data.csv'),
-                   index=False)
-datatypes = player_data.dtypes
-datatypes.to_csv(os.path.join(out_dir, f'cleaned_GW{str(gameweek).zfill(2)}_dtypes.csv'),
-                   index=True)
-#x = player_data[player_data['player_id'].isin([302])].copy()
-#
-#corr = player_data.corr()
-#
-#corr_target = corr.loc[:, 'target_total_points']
-#corr_targets = corr.loc[:, [col for col in corr.columns if col.startswith('target')]]
-
-
-# =============================================================================
-# TODO
-# =============================================================================
-# Some EDA
-# Categorical response
-# Choose features
-# Build models
-# Predict minutes as this has strong correlation
-
-old_data_dir = r'D:\Documents\PythonDoc\FantasyFootball\data\players'
-
-files = [os.path.join(old_data_dir, file) for file in os.listdir(old_data_dir)]
-gameweeks = [file[file.rfind('GW')+2:file.rfind('GW')+4] for file in files]
-date_created = [os.path.getctime(dc) for dc in files]
-files_df = pd.DataFrame({'filename': files,
-                                 'gameweek': gameweeks,
-                                 'date_created': date_created})
-#latest_files = files_df.groupby('gameweek')['date_created'].nlargest(1).reset_index()
-files_df.sort_values(['gameweek', 'date_created'], ascending=[True, False], inplace=True)
-latest_files = files_df.groupby('gameweek').head(1)
-
-retain_cols = ['player_id',
-               'total_points',
-               'status',
-               'now_cost',
-               'news',
-               'squad_number',
-               'news_added',
-               'chance_of_playing_this_round',
-               'chance_of_playing_next_round',
-               'value_form',
-               'value_season',
-               'cost_change_start',
-               'cost_change_event',
-               'cost_change_start_fall',
-               'cost_change_event_fall',
-               'in_dreamteam',
-               'selected_by_percent',
-               'form',
-               'ep_this',
-               'ep_next'
-               ]
-old_data_list = []
-for _, row in latest_files.iterrows():
-    old_data_csv = pd.read_csv(row['filename'], usecols=retain_cols)
-    old_data_csv.insert(0, 'gameweek', row['gameweek'].lstrip('0'))
-    old_data_list.append(old_data_csv)
-
-old_data_full = pd.concat(old_data_list, ignore_index=True)
-
-player_data2 = player_data.copy()
-
-old_data_subset = old_data_full[['player_id',
-                   'gameweek',
-                   'status',
-                   'news',
-                   'squad_number',
-                   'news_added',
-                   'chance_of_playing_this_round',
-                   'chance_of_playing_next_round',
-                   'ep_this',
-                   'ep_next']].copy()
-old_data_subset['gameweek'] = old_data_subset['gameweek'].astype(int)
-
-player_data2['temp_merge_playerid'] = player_data2['player_id'].astype(int)
-player_data2['temp_merge_gameweek'] = player_data2['gameweek'].astype(int)
-player_data2 = player_data2.merge(old_data_subset,
-        how='left',
-        left_on=['temp_merge_playerid', 'temp_merge_gameweek'],
-        right_on=['player_id', 'gameweek'])
-
-player_data2['ep_this']
-
-player_data2[['chance_of_playing_this_round','chance_of_playing_next_round']]
-
-def old_data():
-
-
-
-
