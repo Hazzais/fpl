@@ -383,10 +383,10 @@ def clean_data(player_history,
                player_summary,
                positions,
                total_players,
-               prev_matches_consider=3):
+               prev_matches_consider=3,
+               gameweek_start=1,
+               gameweek_end='latest'):
 
-
-    player_full_set = player_history.copy()
 
     def add_fixture_team(player_full_set, fixtures):
         # Add team. For merging some casting of keys to integers is needed due to
@@ -402,8 +402,8 @@ def clean_data(player_history,
         player_full_set.insert(1, 'team_id', temp_team_id)
         return player_full_set
 
-
-    def team_detailed_data(fixtures, player_full_set, prev_matches_consider):
+    def team_detailed_data(fixtures, player_full_set, prev_matches_consider,
+                           gameweek_start_true, gameweek_end):
         # Make a new dataframe containing one row per team per game showing stats
         fixt_cols = ['gameweek',
                      'fixture_id',
@@ -416,8 +416,13 @@ def clean_data(player_history,
                      'kickoff_time',
                      'event_day']
 
+        # Subset to gameweeks to use
+        use_fixtures = fixtures.loc[
+            (fixtures['gameweek'] >= gameweek_start_true)
+            & (fixtures['gameweek'] <= gameweek_end + 1)]
+
         # Need to concatenate home and away data to get both teams
-        team_fixtures_results_home = fixtures[fixt_cols].rename(
+        team_fixtures_results_home = use_fixtures[fixt_cols].rename(
                 columns={'team_h':'team_id',
                          'team_a':'opponent_team',
                          'team_h_difficulty':'team_difficulty',
@@ -425,7 +430,7 @@ def clean_data(player_history,
                          'team_h_score':'team_scored',
                          'team_a_score':'team_conceded'})
         team_fixtures_results_home['is_home'] = True
-        team_fixtures_results_away = fixtures[fixt_cols].rename(
+        team_fixtures_results_away = use_fixtures[fixt_cols].rename(
                 columns={'team_a':'team_id',
                          'team_h':'opponent_team',
                          'team_a_difficulty':'team_difficulty',
@@ -497,7 +502,6 @@ def clean_data(player_history,
                                                          'team_total_points':'team_prev_total_points',
                                                          'unique_scorers':'team_prev_unique_scorers'}, inplace=True)
         return team_fixtures_results_single, team_fixtures_results, team_stats_add
-
 
     def add_predict_player_row(total_players, player_full_set):
         # Add extra row per player. This will be added to the bottom of each to
@@ -770,10 +774,26 @@ def clean_data(player_history,
                 lambda x: x.rolling(center=False, window=prev_matches_consider).mean())
         return player_full_set
 
+    gameweek_start_true = np.max(
+            (np.min((gameweek_start, gameweek_start-prev_matches_consider)),
+            1))
 
+    if gameweek_end=='latest':
+        gameweek_end = player_history['gameweek'].max()
+    elif not (isinstance(gameweek_end, int) and \
+                    gameweek_end <= 38 and \
+                    gameweek_end >= gameweek_start):
+        raise ValueError("gameweek_end must be either 'latest' or a integer"
+                         "equal to or greater than gameweek_start.")
+
+    player_full_set = player_history.copy()
+    player_full_set = player_full_set.loc[
+            (player_full_set['gameweek'] >= gameweek_start_true)
+            & (player_full_set['gameweek'] <= gameweek_end + 1)]
     player_full_set = add_fixture_team(player_full_set, fixtures)
     team_fixtures_results_single, team_fixtures_results, team_stats_add = \
-    team_detailed_data(fixtures, player_full_set, prev_matches_consider)
+    team_detailed_data(fixtures, player_full_set, prev_matches_consider,
+                           gameweek_start_true, gameweek_end)
     player_full_set = add_predict_player_row(total_players, player_full_set)
     player_full_set = add_lagged_columns(player_full_set)
     player_full_set = add_team_details(player_full_set, team_fixtures_results)
@@ -888,7 +908,6 @@ def clean_data(player_history,
                            'team_id',
                            'team_short',
                            'team_name',
-                           'gameweek',
                            'kickoff_hour',
                            'kickoff_hour_bin',
                            'kickoff_weekday',
@@ -906,7 +925,12 @@ def clean_data(player_history,
                           ]
     player_full_set[cols_to_categorical] = player_full_set[cols_to_categorical].astype('category')
 
-    # Final output is our player dataset with the columns ordered
-    player_full_set = player_full_set[new_col_order]
+    # Final output is our player dataset with the columns ordered. Also take
+    # into account the requested start gameweek here (as rolling values may
+    # require earlier gameweeks when created in the code above)
+    player_full_set = player_full_set.loc[
+            (player_full_set['gameweek'] >= gameweek_start)
+            & (player_full_set['gameweek'] <= gameweek_end + 1),
+                                          new_col_order]
 
     return player_full_set
